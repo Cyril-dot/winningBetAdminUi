@@ -1,5 +1,6 @@
 // ==================== CONFIG ====================
-const BASE_URL = "https://futballbackend-production-7d3b.up.railway.app";
+const BASE_URL = "https://thriving-clarity-production.up.railway.app";
+
 let config = { baseUrl: BASE_URL, token: '' };
 
 // ==================== SIDEBAR ====================
