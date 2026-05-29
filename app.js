@@ -1,5 +1,5 @@
 // ==================== CONFIG ====================
-const BASE_URL = "https://thriving-clarity-production.up.railway.app";
+const BASE_URL = "https://creative-inspiration-production-f4ea.up.railway.app";
 
 let config = { baseUrl: BASE_URL, token: '' };
 
