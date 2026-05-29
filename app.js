@@ -1224,6 +1224,9 @@ async function renderAuditLog(page=0) {
 // ============================================================
 // 10. WITHDRAWAL REQUESTS
 // ============================================================
+// ============================================================
+// 10. WITHDRAWAL REQUESTS
+// ============================================================
 let wdPage=0, wdStatus='';
 
 async function renderWithdrawals(page=0) {
@@ -1233,7 +1236,7 @@ async function renderWithdrawals(page=0) {
     <div class="card">
       <div class="card-header">
         <h2>Withdrawal Requests</h2>
-        <div style="display:flex;gap:8px;align-items:center">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn-ghost btn-sm" onclick="exportWithdrawalsCSV()">⬇ Export CSV</button>
           <button class="btn-ghost btn-sm" onclick="renderWithdrawals(${wdPage})">↻ Refresh</button>
         </div>
@@ -1241,27 +1244,22 @@ async function renderWithdrawals(page=0) {
       <div class="card-body">
         <div class="alert alert-info" style="margin-bottom:16px">
           ℹ <strong>Flow:</strong>
-          User submits → wallet debited immediately →
+          User submits → wallet debited →
           <span class="badge badge-yellow">PENDING</span> →
-          Approve →
           <span class="badge badge-green">APPROVED</span> →
-          Settle (payment sent) →
           <span class="badge badge-green">SETTLED</span>.
-          Rejecting or marking failed at any stage <strong>re-credits</strong> the user's wallet.
+          Rejecting or failing at any stage <strong>re-credits</strong> the wallet.
         </div>
-        <div class="form-row" style="margin-bottom:16px">
-          <div class="form-group">
-            <label>Status</label>
-            <select onchange="wdStatus=this.value;renderWithdrawals(0)">
-              <option value=""         ${wdStatus===''?'selected':''}>All statuses</option>
-              <option value="PENDING"  ${wdStatus==='PENDING'?'selected':''}>PENDING</option>
-              <option value="APPROVED" ${wdStatus==='APPROVED'?'selected':''}>APPROVED</option>
-              <option value="SETTLED"  ${wdStatus==='SETTLED'?'selected':''}>SETTLED</option>
-              <option value="REJECTED" ${wdStatus==='REJECTED'?'selected':''}>REJECTED</option>
-              <option value="FAILED"   ${wdStatus==='FAILED'?'selected':''}>FAILED</option>
-            </select>
-          </div>
-          <button class="btn-ghost" style="align-self:flex-end" onclick="wdStatus='';renderWithdrawals(0)">Clear</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+          <select style="flex:1;min-width:140px" onchange="wdStatus=this.value;renderWithdrawals(0)">
+            <option value=""         ${wdStatus===''?'selected':''}>All statuses</option>
+            <option value="PENDING"  ${wdStatus==='PENDING'?'selected':''}>PENDING</option>
+            <option value="APPROVED" ${wdStatus==='APPROVED'?'selected':''}>APPROVED</option>
+            <option value="SETTLED"  ${wdStatus==='SETTLED'?'selected':''}>SETTLED</option>
+            <option value="REJECTED" ${wdStatus==='REJECTED'?'selected':''}>REJECTED</option>
+            <option value="FAILED"   ${wdStatus==='FAILED'?'selected':''}>FAILED</option>
+          </select>
+          <button class="btn-ghost btn-sm" onclick="wdStatus='';renderWithdrawals(0)">Clear</button>
         </div>
         <div id="wd-list">${loading()}</div>
       </div>
@@ -1273,34 +1271,67 @@ async function renderWithdrawals(page=0) {
     const data = await api(`/api/wallet/withdrawals/admin/all${q}`);
     const list = data.content || [];
 
-    document.getElementById('wd-list').innerHTML = list.length ? `
-      <div class="tbl-wrap"><table>
-        <thead><tr>
-          <th>Date</th><th>User</th><th>Amount</th><th>Method</th>
-          <th>Account</th><th>Status</th><th>Actions</th>
-        </tr></thead>
-        <tbody>${list.map(w => `<tr>
-          ${labeledTd('Date',    `<span class="mono">${fmtDate(w.createdAt)}</span>`)}
-          ${labeledTd('User',    w.user ? `<span style="font-size:12px">${(w.user.firstName||'')+' '+(w.user.lastName||'')}<br><span class="mono" style="color:var(--text-dim)">${w.user.email||''}</span></span>` : `<span class="mono">${truncate(w.userId,16)}</span>`)}
-          ${labeledTd('Amount',  `<strong style="color:var(--red-text)">₵${fmt(w.amount)}</strong>`)}
-          ${labeledTd('Method',  `<span class="badge badge-blue">${w.method||'—'}</span>${w.network ? `<span class="badge badge-gray" style="margin-left:4px">${w.network}</span>` : ''}`)}
-          ${labeledTd('Account', `<span class="mono" style="font-size:12px">${w.accountNumber||'—'}<br>${w.accountName||''}</span>`)}
-          ${labeledTd('Status',  statusBadge(w.status))}
-          ${labeledTd('Actions', `<div class="btn-row">
+    if (!list.length) {
+      document.getElementById('wd-list').innerHTML = empty('No withdrawal requests found.');
+      return;
+    }
+
+    const cards = list.map(w => {
+      const userName = w.user
+        ? `${w.user.firstName||''} ${w.user.lastName||''}`.trim() || w.user.email || '—'
+        : '—';
+      const userEmail = w.user?.email || '';
+      const actions = w.status === 'PENDING' ? `
+        <button class="btn-success btn-sm" onclick="approveWithdrawal('${w.id}')">Approve</button>
+        <button class="btn-danger btn-sm"  onclick="openRejectWithdrawal('${w.id}')">Reject</button>` :
+        w.status === 'APPROVED' ? `
+        <button class="btn-primary btn-sm" onclick="openSettleWithdrawal('${w.id}',${w.amount})">Settle</button>
+        <button class="btn-danger btn-sm"  onclick="openFailWithdrawal('${w.id}')">Mark Failed</button>` : '';
+
+      return `
+        <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+            <div>
+              <div style="font-weight:700;font-size:14px;color:var(--text)">${userName}</div>
+              ${userEmail ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${userEmail}</div>` : ''}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+              ${statusBadge(w.status)}
+              <strong style="font-size:16px;color:var(--red-text)">₵${fmt(w.amount)}</strong>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;">
+              <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:3px">Method</div>
+              <div style="font-size:13px;color:var(--text)">
+                <span class="badge badge-blue" style="font-size:11px">${w.method||'—'}</span>
+                ${w.network ? `<span class="badge badge-gray" style="margin-left:4px;font-size:11px">${w.network}</span>` : ''}
+              </div>
+            </div>
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;">
+              <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:3px">Date</div>
+              <div style="font-size:12px;color:var(--text);font-family:monospace">${fmtDate(w.createdAt)}</div>
+            </div>
+            <div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;grid-column:1/-1;">
+              <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:3px">Account</div>
+              <div style="font-size:12px;color:var(--text);font-family:monospace">${w.accountNumber||'—'} ${w.accountName ? `· ${w.accountName}` : ''}</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-top:1px solid var(--border);padding-top:10px;">
             <button class="btn-ghost btn-sm" onclick='viewWithdrawal(${JSON.stringify(w).replace(/'/g,"&#39;")})'>Detail</button>
-            ${w.status==='PENDING' ? `
-              <button class="btn-success btn-sm" onclick="approveWithdrawal('${w.id}')">Approve</button>
-              <button class="btn-danger btn-sm"  onclick="openRejectWithdrawal('${w.id}')">Reject</button>` : ''}
-            ${w.status==='APPROVED' ? `
-              <button class="btn-primary btn-sm" onclick="openSettleWithdrawal('${w.id}',${w.amount})">Settle</button>
-              <button class="btn-danger btn-sm"  onclick="openFailWithdrawal('${w.id}')">Mark Failed</button>` : ''}
-          </div>`)}
-        </tr>`).join('')}</tbody>
-      </table></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;padding-top:10px;flex-wrap:wrap;gap:8px">
+            ${actions}
+          </div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('wd-list').innerHTML = `
+      ${cards}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-top:6px;flex-wrap:wrap;gap:8px">
         <span class="pager-info">${data.totalElements.toLocaleString()} total withdrawal requests</span>
         ${paginator(wdPage, data.totalPages, 'renderWithdrawals')}
-      </div>` : empty('No withdrawal requests found.');
+      </div>`;
   } catch (e) {
     document.getElementById('wd-list').innerHTML = `<div class="alert alert-error">✕ ${e.message}</div>`;
   }
@@ -1308,7 +1339,7 @@ async function renderWithdrawals(page=0) {
 
 function viewWithdrawal(w) {
   const user = w.user || {};
-  openModal('Withdrawal Request Detail', `
+  openModal('Withdrawal Detail', `
     <div class="section-title">Request</div>
     <div class="detail-grid">
       ${detailRow('ID',              `<span class="mono">${w.id}</span>`)}
@@ -1334,35 +1365,35 @@ function viewWithdrawal(w) {
       </div>` : ''}
     <div class="modal-footer">
       ${w.status==='PENDING' ? `
-        <button class="btn-success" onclick="closeModal();approveWithdrawal('${w.id}')">Approve</button>
-        <button class="btn-danger"  onclick="closeModal();openRejectWithdrawal('${w.id}')">Reject</button>` : ''}
+        <button class="btn-success btn-sm" onclick="closeModal();approveWithdrawal('${w.id}')">Approve</button>
+        <button class="btn-danger btn-sm"  onclick="closeModal();openRejectWithdrawal('${w.id}')">Reject</button>` : ''}
       ${w.status==='APPROVED' ? `
-        <button class="btn-primary" onclick="closeModal();openSettleWithdrawal('${w.id}',${w.amount})">Settle</button>
-        <button class="btn-danger"  onclick="closeModal();openFailWithdrawal('${w.id}')">Mark Failed</button>` : ''}
+        <button class="btn-primary btn-sm" onclick="closeModal();openSettleWithdrawal('${w.id}',${w.amount})">Settle</button>
+        <button class="btn-danger btn-sm"  onclick="closeModal();openFailWithdrawal('${w.id}')">Mark Failed</button>` : ''}
       <button class="btn-ghost" onclick="closeModal()">Close</button>
     </div>`);
 }
 
 async function approveWithdrawal(id) {
-  if (!confirm('Approve this withdrawal request?\n\nThe wallet has already been debited — this just moves it to APPROVED for settlement.')) return;
+  if (!confirm('Approve this withdrawal?\n\nWallet already debited — this moves it to APPROVED for settlement.')) return;
   try {
     await api(`/api/wallet/withdrawals/admin/${id}/approve`, 'POST', { note: '' });
-    showAlert('Withdrawal approved. Now use Settle once payment is sent.', 'success', 6000);
+    showAlert('Withdrawal approved. Use Settle once payment is sent.', 'success', 6000);
     renderWithdrawals(wdPage);
   } catch (e) { showAlert('Error: '+e.message, 'error'); }
 }
 
 function openRejectWithdrawal(id) {
   openModal('Reject Withdrawal', `
-    <div class="alert alert-warning">⚠ Rejecting will <strong>re-credit</strong> the full amount back to the user's wallet.</div>
+    <div class="alert alert-warning">⚠ Rejecting will <strong>re-credit</strong> the full amount to the user's wallet.</div>
     <div class="form-group" style="margin-bottom:12px;margin-top:12px">
-      <label>Rejection Note * (visible to admin)</label>
+      <label>Rejection Note *</label>
       <textarea id="wd-rej-note" placeholder="Unable to verify account details…"></textarea>
     </div>
     <div id="wd-rej-msg"></div>
     <div class="modal-footer">
       <button class="btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn-danger" id="wd-rej-btn" onclick="rejectWithdrawal('${id}')">✕ Reject & Re-credit Wallet</button>
+      <button class="btn-danger" id="wd-rej-btn" onclick="rejectWithdrawal('${id}')">✕ Reject & Re-credit</button>
     </div>`);
 }
 
@@ -1377,17 +1408,17 @@ async function rejectWithdrawal(id) {
   try {
     await api(`/api/wallet/withdrawals/admin/${id}/reject`, 'POST', { note });
     closeModal();
-    showAlert('Withdrawal rejected. User wallet has been re-credited.', 'success');
+    showAlert('Withdrawal rejected. User wallet re-credited.', 'success');
     renderWithdrawals(wdPage);
   } catch (e) {
     document.getElementById('wd-rej-msg').innerHTML = `<div class="alert alert-error">✕ ${e.message}</div>`;
-    btn.disabled=false; btn.innerHTML='✕ Reject & Re-credit Wallet';
+    btn.disabled=false; btn.innerHTML='✕ Reject & Re-credit';
   }
 }
 
 function openSettleWithdrawal(id, amount) {
   openModal('Settle Withdrawal', `
-    <div class="alert alert-info">ℹ Settling confirms you have <strong>physically sent ₵${fmt(amount)}</strong> to the user. The WITHDRAW_HOLD transaction will be converted to WITHDRAW.</div>
+    <div class="alert alert-info">ℹ Settling confirms you have <strong>physically sent ₵${fmt(amount)}</strong> to the user. WITHDRAW_HOLD will convert to WITHDRAW.</div>
     <div class="form-group" style="margin-bottom:12px;margin-top:12px">
       <label>Super Admin Note (optional)</label>
       <textarea id="wd-settle-note" placeholder="Sent via MTN Mobile Money. Ref: XXXXXXXX"></textarea>
@@ -1406,7 +1437,7 @@ async function settleWithdrawal(id) {
   try {
     await api(`/api/wallet/withdrawals/super-admin/${id}/settle`, 'POST', { note });
     closeModal();
-    showAlert('Withdrawal settled successfully! Payment confirmed.', 'success');
+    showAlert('Withdrawal settled successfully!', 'success');
     renderWithdrawals(wdPage);
   } catch (e) {
     document.getElementById('wd-settle-msg').innerHTML = `<div class="alert alert-error">✕ ${e.message}</div>`;
@@ -1416,15 +1447,15 @@ async function settleWithdrawal(id) {
 
 function openFailWithdrawal(id) {
   openModal('Mark Withdrawal Failed', `
-    <div class="alert alert-warning">⚠ Marking as failed will <strong>re-credit</strong> the full amount back to the user's wallet.</div>
+    <div class="alert alert-warning">⚠ This will <strong>re-credit</strong> the full amount to the user's wallet.</div>
     <div class="form-group" style="margin-bottom:12px;margin-top:12px">
-      <label>Failure Reason * (visible to super admin log)</label>
+      <label>Failure Reason *</label>
       <textarea id="wd-fail-note" placeholder="Mobile Money transaction declined by provider…"></textarea>
     </div>
     <div id="wd-fail-msg"></div>
     <div class="modal-footer">
       <button class="btn-ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn-danger" id="wd-fail-btn" onclick="failWithdrawal('${id}')">Mark as Failed & Re-credit</button>
+      <button class="btn-danger" id="wd-fail-btn" onclick="failWithdrawal('${id}')">Mark Failed & Re-credit</button>
     </div>`);
 }
 
@@ -1439,11 +1470,11 @@ async function failWithdrawal(id) {
   try {
     await api(`/api/wallet/withdrawals/super-admin/${id}/mark-failed`, 'POST', { note });
     closeModal();
-    showAlert('Withdrawal marked as failed. User wallet has been re-credited.', 'success');
+    showAlert('Withdrawal marked failed. User wallet re-credited.', 'success');
     renderWithdrawals(wdPage);
   } catch (e) {
     document.getElementById('wd-fail-msg').innerHTML = `<div class="alert alert-error">✕ ${e.message}</div>`;
-    btn.disabled=false; btn.innerHTML='Mark as Failed & Re-credit';
+    btn.disabled=false; btn.innerHTML='Mark Failed & Re-credit';
   }
 }
 
@@ -1480,7 +1511,6 @@ async function exportWithdrawalsCSV() {
   } catch(e) { showAlert('Export failed: '+e.message,'error'); }
   finally { if (btn) { btn.disabled=false; btn.innerHTML='⬇ Export CSV'; } }
 }
-
 // ============================================================
 // INIT
 // ============================================================
