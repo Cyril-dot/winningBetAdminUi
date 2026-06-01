@@ -1,6 +1,5 @@
 // ==================== CONFIG ====================
-const BASE_URL = "https://creative-inspiration-production-f4ea.up.railway.app";
-
+const BASE_URL = 'https://futballbackend-production-45c7.up.railway.app';
 let config = { baseUrl: BASE_URL, token: '' };
 
 // ==================== SIDEBAR ====================
